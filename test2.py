@@ -158,7 +158,7 @@ async def generar_mapa(data: dict):
         str(0.25): 'green',  # Cuartil bajo
         str(0.50): 'yellow', # Mediana
         str(0.75): 'orange', # Cuartil alto
-        str(1.0): 'red'      # Máximo absoluto (Debe aplicarse a Asunción)
+        str(1.0): 'red'      # Máximo absoluto
     }
 
     # Agregar HeatMap con barra de intensidad
