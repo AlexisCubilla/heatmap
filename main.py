@@ -29,6 +29,17 @@ DB_CONFIG = {
     "port": os.getenv("DB_PORT"),
 }
 
+# Definir colores fijos como constantes globales
+HEATMAP_COLORS = {
+    'lowest': '#03254C',    # Azul oscuro (más bajo)
+    'low': '#1C6DD0',      # Azul claro (intermedio bajo)
+    'medium': '#4BA36F',    # Verde (intermedio)
+    'high': '#FFD93D',     # Amarillo (intermedio alto)
+    'higher': '#FF8400',    # Naranja (intermedio alto)
+    'highest': '#FF0000'    # Rojo (más alto)
+}
+
+
 # Inicializar pool de conexiones a PostgreSQL
 async def get_db_pool():
     return await asyncpg.create_pool(**DB_CONFIG)
@@ -144,30 +155,27 @@ async def generar_mapa(data: dict):
     if vmin == vmax:
         vmax = vmin + 1  # Evitar errores si todos los valores son iguales
 
-    # Definir colores de intensidad con 5 pasos fijos
+    # Usar los colores definidos globalmente
     colormap = LinearColormap(
-        colors=['blue', 'green', 'yellow', 'orange', 'red'],  
-        vmin=vmin,  
+        colors=list(HEATMAP_COLORS.values()),
+        vmin=vmin,
         vmax=vmax,
         caption="Rango de Acreditaciones"
-    ).to_step(n=5)  # Forzar 5 niveles de colores bien diferenciados
+    ).to_step(n=len(HEATMAP_COLORS))
 
-    # Definir gradiente FIJO asegurando que los valores sean correctamente interpretados
+    # Crear gradiente usando los mismos colores y calculando los pasos
+    step = 1.0 / (len(HEATMAP_COLORS) - 1)
     gradient_dict = {
-        str(0.0): 'blue',    # Mínimo absoluto
-        str(0.25): 'green',  # Cuartil bajo
-        str(0.50): 'yellow', # Mediana
-        str(0.75): 'orange', # Cuartil alto
-        str(1.0): 'red'      # Máximo absoluto
+        str(i * step): color for i, color in enumerate(HEATMAP_COLORS.values())
     }
-
+    
     # Agregar HeatMap con barra de intensidad
     HeatMap(
         heat_data,
-        min_opacity=0.3,
+        min_opacity=0.3,  # Mayor visibilidad
         max_opacity=0.8,
-        radius=18,
-        blur=10,
+        radius=25,  # Aumentar tamaño de puntos para visualizar mejor
+        blur=12,
         gradient=gradient_dict
     ).add_to(mapa)
 
@@ -177,6 +185,7 @@ async def generar_mapa(data: dict):
     
     # Agregar marcadores con tooltip para mostrar la cantidad de acreditaciones
     for _, row in df.iterrows():
+        acreditacion_text = "Acreditación" if row['count'] == 1 else "Acreditaciones"
         folium.CircleMarker(
             location=[row["lat"], row["lon"]],
             radius=5 + (row["count"] / vmax) * 10,  # Tamaño proporcional a la cantidad
@@ -185,11 +194,9 @@ async def generar_mapa(data: dict):
             fill_color="black",  # Relleno invisible para no interferir con el heatmap
             fill_opacity=0.01,  # Casi transparente para que no sea invasivo
             weight=0,  # Sin borde
-            tooltip=f"{row['ciudad']}: {row['count']} Acreditaciones"  # Texto al pasar el mouse
+            tooltip=f"{row['ciudad']}: {row['count']} {acreditacion_text}"  # Texto al pasar el mouse
         ).add_to(mapa)
-
-
-    # Convertir el mapa a HTML
+        # Convertir el mapa a HTML
     return Response(content=mapa._repr_html_(), media_type="text/html")
 
 async def obtener_datos_bd(pool):
