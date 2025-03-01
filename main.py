@@ -111,13 +111,43 @@ PARAGUAY_CONFIG = obtener_coordenadas_paraguay()
 
 print(PARAGUAY_CONFIG)
 
+def generar_mapa_base():
+    """Genera un mapa base sin puntos de calor."""
+    MAPA_BASE = folium.Map(
+        location=PARAGUAY_CONFIG["center"],
+        zoom_start=PARAGUAY_CONFIG["zoom"]["start"],
+        min_zoom=PARAGUAY_CONFIG["zoom"]["min"],
+        max_bounds=True,
+        max_bounds_viscosity=1.0,
+        dragging=True,
+        scrollWheelZoom=True,
+        min_lat=PARAGUAY_CONFIG["bounds"]["min_lat"],
+        max_lat=PARAGUAY_CONFIG["bounds"]["max_lat"],
+        min_lon=PARAGUAY_CONFIG["bounds"]["min_lon"],
+        max_lon=PARAGUAY_CONFIG["bounds"]["max_lon"],
+        control_scale=True,
+        zoom_control=True,
+        attributionControl=True,
+        width="100%",
+        height="100%",
+    )
+
+    folium.TileLayer("CartoDB Positron", min_zoom=PARAGUAY_CONFIG["zoom"]["min"]).add_to(MAPA_BASE)
+    
+    return MAPA_BASE
+
+
 @app.post("/heatmap/")
 async def generar_mapa(data: dict):
     """Genera un mapa de calor centrado en Paraguay con barra de intensidad."""
     df = pd.DataFrame(data["data"])
+    
+    print("data:\n",data)
 
     # Obtener coordenadas dinámicamente con caché
     df["lat"], df["lon"] = zip(*df["ciudad"].apply(lambda x: obtener_coordenadas(x)))
+    
+    print("dataframe con coordenadas:\n",df)
 
     # Filtrar datos inválidos
     df = df.dropna(subset=["lat", "lon", "count"])
@@ -130,22 +160,13 @@ async def generar_mapa(data: dict):
     # Verificar que hay al menos un dato válido
     if df["count"].sum() == 0:
         return {"error": "Todos los valores de 'count' son cero o inválidos."}
+    
+    print("dataframe generado:\n",df)
+    
+    mapa = generar_mapa_base()
 
-    # Crear el mapa usando las coordenadas de Paraguay
-    mapa = folium.Map(
-        location=PARAGUAY_CONFIG["center"],
-        zoom_start=PARAGUAY_CONFIG["zoom"]["start"],
-        min_zoom=PARAGUAY_CONFIG["zoom"]["min"],
-        max_bounds=True,
-        max_bounds_viscosity=1.0,
-        dragging=True,
-        scrollWheelZoom=True,
-        min_lat=PARAGUAY_CONFIG["bounds"]["min_lat"],
-        max_lat=PARAGUAY_CONFIG["bounds"]["max_lat"],
-        min_lon=PARAGUAY_CONFIG["bounds"]["min_lon"],
-        max_lon=PARAGUAY_CONFIG["bounds"]["max_lon"]
-    )
-
+    print("mapa generado:\n")
+    
     # Asegurar que heat_data tenga valores correctos
     heat_data = [[float(row["lat"]), float(row["lon"]), int(row["count"])] for _, row in df.iterrows()]
 
@@ -196,8 +217,59 @@ async def generar_mapa(data: dict):
             weight=0,  # Sin borde
             tooltip=f"{row['ciudad']}: {row['count']} {acreditacion_text}"  # Texto al pasar el mouse
         ).add_to(mapa)
+        
+     # CSS Responsivo para el Mapa
+    style = """
+    <style>
+        /* Eliminar márgenes y padding del body y HTML */
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+            overflow: hidden; /* Evita desplazamientos no deseados */
+        }
+
+        /* Contenedor del mapa para que ocupe toda la pantalla */
+        #mapid, .folium-map {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+        }
+
+        /* Asegurar que el iframe de Folium ocupe toda la pantalla */
+        iframe {
+            width: 100%;
+            height: 100vh !important;
+            border: none;
+        }
+    </style>
+    """
+
+    # JavaScript para ajustar el mapa al tamaño de la pantalla
+    script = """
+    <script>
+        function resizeMap() {
+            var mapContainer = document.querySelector('.folium-map, iframe');
+            if (mapContainer) {
+                mapContainer.style.height = window.innerHeight + "px";
+            }
+        }
+
+        // Ajustar el tamaño del mapa al cargar la página y al redimensionar
+        window.onload = resizeMap;
+        window.onresize = resizeMap;
+
+    </script>
+    """
+    
+    return Response(content=style + mapa._repr_html_() + script, media_type="text/html")
+
         # Convertir el mapa a HTML
-    return Response(content=mapa._repr_html_(), media_type="text/html")
+    # return Response(content=mapa._repr_html_(), media_type="text/html")
 
 async def obtener_datos_bd(pool):
     """Consulta la base de datos PostgreSQL y obtiene los datos."""
